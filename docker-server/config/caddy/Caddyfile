@@ -1,0 +1,66 @@
+# Caddyfile - Basic reverse proxy configuration
+# Configured for Cloudflare DNS
+
+# Global options for Cloudflare DNS challenge (optional)
+# Uncomment and configure if you want to use DNS challenge with Caddy
+# {
+#     acme_dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+#     email your-email@domain.com
+# }
+
+# Example 1: Static site with Cloudflare
+yourdomain.com {
+    # If using Cloudflare proxy, you might want to get real visitor IPs
+    # trusted_proxies cloudflare
+    
+    # Serve static files from /usr/share/caddy
+    file_server
+    
+    # Optional: Enable compression
+    encode gzip
+    
+    # Optional: Security headers (some may conflict with Cloudflare)
+    header {
+        # Enable HSTS (Cloudflare can also handle this)
+        Strict-Transport-Security max-age=31536000;
+        # Prevent MIME sniffing
+        X-Content-Type-Options nosniff
+        # Enable XSS protection
+        X-Frame-Options DENY
+        # Remove server header for security
+        -Server
+    }
+}
+
+# Example 2: Reverse proxy to webapp container
+app.yourdomain.com {
+    reverse_proxy webapp:80
+    
+    # Optional: Add custom headers
+    header {
+        X-Forwarded-For {remote_host}
+    }
+}
+
+# Example 3: API subdomain with rate limiting
+api.yourdomain.com {
+    # Rate limiting (requires Caddy with rate limit plugin)
+    # rate_limit {
+    #     zone api_zone
+    #     key {remote_host}
+    #     events 100
+    #     window 1m
+    # }
+    
+    reverse_proxy webapp:80
+}
+
+# Example 4: Multiple backends with load balancing
+balanced.yourdomain.com {
+    reverse_proxy webapp1:80 webapp2:80 {
+        lb_policy round_robin
+        health_uri /health
+        health_interval 10s
+        health_timeout 5s
+    }
+}

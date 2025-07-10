@@ -1,0 +1,359 @@
+version: '3.8'
+
+services:
+  # CADDY Reverse Proxy Example (LinuxServer.io)
+  caddy:
+    image: lscr.io/linuxserver/caddy:latest
+    container_name: caddy
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+    volumes:
+      - ./config/caddy:/config
+      - ./data/caddy:/data
+      - ./site:/usr/share/caddy # Optional: for serving static files
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # For HTTP/3
+    restart: unless-stopped
+    networks:
+      - proxy-network
+
+  # SWAG (Secure Web Application Gateway) Example (LinuxServer.io)
+  # Configured for Cloudflare DNS
+  swag:
+    image: lscr.io/linuxserver/swag:latest
+    container_name: swag
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+      - URL=aadd.rocks # Change this to your domain
+      - SUBDOMAINS=wildcard
+      - VALIDATION=dns
+      - DNSPLUGIN=cloudflare
+ lsls     - EMAIL=aa.ohana.suite@aadd.rocks # Required for Let's Encrypt
+      # Optional: Set specific Cloudflare zone
+      # - EXTRA_DOMAINS=example2.com,example3.com
+      # - PROPAGATION=60 # DNS propagation time in seconds
+    volumes:
+      - ./config/swag:/config
+      - ./config/cloudflare:/config/dns-conf # Cloudflare credentials
+    ports:
+      - "80:80"
+      - "443:443"
+    restart: unless-stopped
+    networks:
+      - proxy-network
+
+  # Example web application
+  webapp:
+    image: nginx:alpine
+    container_name: webapp
+    volumes:
+      - ./site:/usr/share/nginx/html:ro
+    expose:
+      - "80"
+    restart: unless-stopped
+    networks:
+      - proxy-network
+
+  # Example database (PostgreSQL)
+  database:
+    image: postgres:15-alpine
+    container_name: postgres-db
+    environment:
+      - POSTGRES_DB=myapp
+      - POSTGRES_USER=dbuser
+      - POSTGRES_PASSWORD_FILE=/run/secrets/db_password
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+      - ./init-scripts:/docker-entrypoint-initdb.d
+    expose:
+      - "5432"
+    restart: unless-stopped
+    networks:
+      - database-network
+    secrets:
+      - db_password
+
+  # Watchtower for automatic updates (optional)
+  watchtower:
+    image: containrrr/watchtower
+    container_name: watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_SCHEDULE=0 2 * * *  # Daily at 2 AM
+    restart: unless-stopped
+---
+  nextcloud:
+	image: lscr.io/linuxserver/nextcloud:latest
+	container_name: nextcloud
+	environment:
+	  - PUID=1000
+	  - PGID=1000
+	  - TZ=Etc/UTC
+	volumes:
+	  - /path/to/nextcloud/config:/config
+	  - /path/to/data:/data
+	ports:
+	  - 443:443
+	restart: unless-stopped
+  wireguard:
+    image: lscr.io/linuxserver/wireguard:latest
+    container_name: wireguard
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE #optional
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+      - SERVERURL=wireguard.domain.com #optional
+      - SERVERPORT=51820 #optional
+      - PEERS=1 #optional
+      - PEERDNS=auto #optional
+      - INTERNAL_SUBNET=10.13.13.0 #optional
+      - ALLOWEDIPS=0.0.0.0/0 #optional
+      - PERSISTENTKEEPALIVE_PEERS= #optional
+      - LOG_CONFS=true #optional
+    volumes:
+      - /path/to/wireguard/config:/config
+      - /lib/modules:/lib/modules #optional
+    ports:
+      - 51820:51820/udp
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+    restart: unless-stopped
+---
+  unifi-network-application:
+    image: lscr.io/linuxserver/unifi-network-application:latest
+    container_name: unifi-network-application
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+      - MONGO_USER=unifi
+      - MONGO_PASS=
+      - MONGO_HOST=unifi-db
+      - MONGO_PORT=27017
+      - MONGO_DBNAME=unifi
+      - MONGO_AUTHSOURCE=admin
+      - MEM_LIMIT=1024 #optional
+      - MEM_STARTUP=1024 #optional
+      - MONGO_TLS= #optional
+    volumes:
+      - /path/to/unifi-network-application/data:/config
+    ports:
+      - 8443:8443
+      - 3478:3478/udp
+      - 10001:10001/udp
+      - 8080:8080
+      - 1900:1900/udp #optional
+      - 8843:8843 #optional
+      - 8880:8880 #optional
+      - 6789:6789 #optional
+      - 5514:5514/udp #optional
+    restart: unless-stopped
+ webtop:
+    image: lscr.io/linuxserver/webtop:latest
+    container_name: webtop
+    security_opt:
+      - seccomp:unconfined #optional
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+      - SUBFOLDER=/ #optional
+      - TITLE=Webtop #optional
+    volumes:
+      - /path/to/data:/config
+      - /var/run/docker.sock:/var/run/docker.sock #optional
+    ports:
+      - 3000:3000
+      - 3001:3001
+    shm_size: "1gb" #optional
+    restart: unless-stopped
+---
+  openssh-server:
+    image: lscr.io/linuxserver/openssh-server:latest
+    container_name: openssh-server
+    hostname: openssh-server #optional
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+      - PUBLIC_KEY=yourpublickey #optional
+      - PUBLIC_KEY_FILE=/path/to/file #optional
+      - PUBLIC_KEY_DIR=/path/to/directory/containing/_only_/pubkeys #optional
+      - PUBLIC_KEY_URL=https://github.com/username.keys #optional
+      - SUDO_ACCESS=false #optional
+      - PASSWORD_ACCESS=false #optional
+      - USER_PASSWORD=password #optional
+      - USER_PASSWORD_FILE=/path/to/file #optional
+      - USER_NAME=linuxserver.io #optional
+      - LOG_STDOUT= #optional
+    volumes:
+      - /path/to/openssh-server/config:/config
+    ports:
+      - 2222:2222
+    restart: unless-stopped
+---
+---
+services:
+  duplicati:
+    image: lscr.io/linuxserver/duplicati:latest
+    container_name: duplicati
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+      - SETTINGS_ENCRYPTION_KEY=
+      - CLI_ARGS= #optional
+      - DUPLICATI__WEBSERVICE_PASSWORD= #optional
+    volumes:
+      - /path/to/duplicati/config:/config
+      - /path/to/backups:/backups
+      - /path/to/source:/source
+    ports:
+      - 8200:8200
+    restart: unless-stopped
+---
+duckdns:
+    image: lscr.io/linuxserver/duckdns:latest
+    container_name: duckdns
+    network_mode: host #optional
+    environment:
+      - PUID=1000 #optional
+      - PGID=1000 #optional
+      - TZ=Etc/UTC #optional
+      - SUBDOMAINS=subdomain1,subdomain2
+      - TOKEN=token
+      - UPDATE_IP=ipv4 #optional
+      - LOG_FILE=false #optional
+    volumes:
+      - /path/to/duckdns/config:/config #optional
+    restart: unless-stopped
+---
+---
+  nginx:
+    image: lscr.io/linuxserver/nginx:latest
+    container_name: nginx
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+      - NGINX_AUTORELOAD= #optional
+      - NGINX_AUTORELOAD_WATCHLIST= #optional
+    volumes:
+      - /path/to/nginx/config:/config
+    ports:
+      - 80:80
+      - 443:443
+    restart: unless-stopped
+---
+---
+services:
+  socket-proxy:
+    image: lscr.io/linuxserver/socket-proxy:latest
+    container_name: socket-proxy
+    environment:
+      - ALLOW_START=0 #optional
+      - ALLOW_STOP=0 #optional
+      - ALLOW_RESTARTS=0 #optional
+      - AUTH=0 #optional
+      - BUILD=0 #optional
+      - COMMIT=0 #optional
+      - CONFIGS=0 #optional
+      - CONTAINERS=0 #optional
+      - DISABLE_IPV6=0 #optional
+      - DISTRIBUTION=0 #optional
+      - EVENTS=1 #optional
+      - EXEC=0 #optional
+      - IMAGES=0 #optional
+      - INFO=0 #optional
+      - LOG_LEVEL=info #optional
+      - NETWORKS=0 #optional
+      - NODES=0 #optional
+      - PING=1 #optional
+      - PLUGINS=0 #optional
+      - POST=0 #optional
+      - SECRETS=0 #optional
+      - SERVICES=0 #optional
+      - SESSION=0 #optional
+      - SWARM=0 #optional
+      - SYSTEM=0 #optional
+      - TASKS=0 #optional
+      - VERSION=1 #optional
+      - VOLUMES=0 #optional
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /run
+---
+services:
+  speedtest-tracker:
+    image: lscr.io/linuxserver/speedtest-tracker:latest
+    container_name: speedtest-tracker
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+      - APP_KEY=
+      - APP_URL=
+      - DB_CONNECTION=sqlite
+      - SPEEDTEST_SCHEDULE=
+      - SPEEDTEST_SERVERS=
+      - DB_HOST= #optional
+      - DB_PORT= #optional
+      - DB_DATABASE= #optional
+      - DB_USERNAME= #optional
+      - DB_PASSWORD= #optional
+      - DISPLAY_TIMEZONE=Etc/UTC #optional
+      - PRUNE_RESULTS_OLDER_THAN=0 #optional
+    volumes:
+      - /path/to/speedtest-tracker/data:/config
+    ports:
+      - 80:80
+    restart: unless-stopped
+---
+services:
+  syncthing:
+    image: lscr.io/linuxserver/syncthing:latest
+    container_name: syncthing
+    hostname: debian #optional
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+    volumes:
+      - /path/to/syncthing/config:/config
+      - /path/to/data1:/data1
+      - /path/to/data2:/data2
+    ports:
+      - 8384:8384
+      - 22000:22000/tcp
+      - 22000:22000/udp
+      - 21027:21027/udp
+    restart: unless-stopped
+---
+networks:
+  proxy-network:
+    driver: bridge
+  database-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
+
+secrets:
+  db_password:
+    file: ./secrets/db_password.txt
